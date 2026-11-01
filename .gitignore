@@ -1,10 +1,10 @@
-# Configuração local com credenciais e IDs privados
+# Local configuration with private credentials and IDs
 config.php
 
-# Logs gerados em execução
+# Runtime logs
 *.log
 
-# Arquivos de sistema e editores
+# OS and editor files
 .DS_Store
 Thumbs.db
 .idea/

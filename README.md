@@ -1,122 +1,124 @@
-# Ponte Telegram → Grok Bot (Webhook)
+# Telegram → Grok Bot Webhook Bridge
 
-Script leve em PHP que atua como ponte (*webhook bridge*) entre a **Bot API do Telegram** e uma rotina com gatilho **Webhook no Grok Bot**, acordando o agente instantaneamente a cada nova mensagem autorizada.
+Lightweight PHP webhook bridge between the **Telegram Bot API** and a **Grok Bot** webhook-triggered routine, waking the agent immediately whenever an authorized message arrives.
 
 ---
 
-## Como funciona
+## How It Works
 
 ```mermaid
 sequenceDiagram
-    participant U as Usuário / Grupo
+    participant U as User / Group
     participant T as Telegram API
-    participant B as telegram.php (Ponte)
+    participant B as telegram.php (Bridge)
     participant G as Grok Bot (Webhook)
 
-    U->>T: Envia mensagem
+    U->>T: Sends message
     T->>B: POST (X-Telegram-Bot-Api-Secret-Token)
-    B->>B: Valida token, chat_id e from_id
-    B-->>T: HTTP 200 OK (libera conexão)
+    B->>B: Validates token, chat_id, and from_id
+    B-->>T: HTTP 200 OK (closes connection)
     B->>G: POST JSON (Bearer GROK_KEY)
-    B->>B: Grava status HTTP em bridge.log
+    B->>B: Appends HTTP status to bridge.log
 ```
 
-1. **Autenticação da origem:** Verifica se a requisição é `POST` e se o cabeçalho `X-Telegram-Bot-Api-Secret-Token` corresponde ao `TG_SECRET` configurado (comparação em tempo constante via `hash_equals`).
-2. **Filtragem estrita (Allowlist):** Descarta mensagens enviadas por bots, eventos sem texto/legenda e mensagens vindas de usuários (`$ALLOWED_USERS`) ou conversas (`$ALLOWED_CHATS`) não listados.
-3. **Resposta imediata ao Telegram:** Retorna `200 OK` e encerra a requisição com o Telegram (`fastcgi_finish_request` / `flush`) antes de acionar o Grok Bot, evitando timeouts e reenvios duplicados.
-4. **Repasse e diagnóstico privado:** Envia o `update` ao endpoint do Grok Bot via cURL e grava apenas metadados da entrega (`timestamp`, `update_id`, `chat_id` e código HTTP) em `bridge.log` — sem salvar o conteúdo das mensagens.
+1. **Origin Authentication:** Verifies that the request uses `POST` and that the `X-Telegram-Bot-Api-Secret-Token` header matches `TG_SECRET` using constant-time comparison (`hash_equals`).
+2. **Strict Allowlist Filtering:** Ignores messages sent by bots, updates without text/captions, and messages from users (`$ALLOWED_USERS`) or chats (`$ALLOWED_CHATS`) not explicitly allowlisted.
+3. **Immediate Telegram ACK:** Responds with `200 OK` and flushes the connection (`fastcgi_finish_request` / `flush`) before calling Grok Bot, preventing webhook timeouts and duplicate retries.
+4. **Forwarding & Privacy-Safe Logging:** Forwards the Telegram `update` payload to the Grok Bot webhook via cURL and writes only delivery metadata (`timestamp`, `update_id`, `chat_id`, and HTTP status code) to `bridge.log` — never logging message contents.
 
 ---
 
-## Estrutura de arquivos
+## Repository Structure
 
-| Arquivo | Descrição |
+| File | Description |
 | :--- | :--- |
-| `telegram.php` | Script principal da ponte que recebe o webhook do Telegram e repassa ao Grok Bot. |
-| `config.exemplo.php` | Modelo de configuração (sem dados sensíveis). Deve ser copiado para `config.php`. |
-| `config.php` | *(Ignorado no Git)* Guarda os tokens secretos e os IDs de chats e usuários permitidos. |
-| `.htaccess` | Regras para Apache que bloqueiam listagem de diretórios e acesso HTTP direto a `config.php`, `bridge.log` e arquivos internos. |
+| `telegram.php` | Main webhook bridge script that receives Telegram updates and forwards them to Grok Bot. |
+| `config.example.php` | Configuration template (no sensitive data). Copy this file to `config.php`. |
+| `config.php` | *(Git-ignored)* Holds your secret tokens and allowlisted chat/user IDs. |
+| `.htaccess` | Apache rules disabling directory listing and blocking direct HTTP access to `config.php`, `bridge.log`, and internal files. |
 
 ---
 
-## Pré-requisitos
+## Prerequisites
 
-- Hospedagem web com **HTTPS** ativo (exigência da API de Webhooks do Telegram).
-- **PHP 7.4+** ou **PHP 8.x** com as extensões `curl` e `json` habilitadas.
-- Servidor Apache (para uso automático do `.htaccess`) ou Nginx (veja nota de segurança abaixo).
-- Um bot criado no Telegram via [@BotFather](https://t.me/BotFather).
-- Uma rotina configurada com gatilho **Webhook** no Grok Bot.
+- Web hosting with valid **HTTPS** (required by the Telegram Bot Webhook API).
+- **PHP 7.4+** or **PHP 8.x** with the `curl` and `json` extensions enabled.
+- Apache (for automatic `.htaccess` protection) or Nginx (see security note below).
+- A Telegram bot created via [@BotFather](https://t.me/BotFather).
+- A routine configured with a **Webhook** trigger in Grok Bot.
 
 ---
 
-## Passo a passo de instalação
+## Setup Guide
 
-### 1. Obter os dados do Webhook no Grok Bot
+### 1. Get Your Grok Bot Webhook Credentials
 
-Abra a rotina **Telegram (webhook)** no Grok Bot e, na seção **Webhook**, copie os campos:
-- **POST to** (URL do webhook) → será usado em `GROK_URL`
-- **key** (chave de autenticação) → será usado em `GROK_KEY`
+Open your **Telegram (webhook)** routine in Grok Bot. Under the **Webhook** section, copy:
+- **POST to** (Webhook URL) → used for `GROK_URL`
+- **key** (Webhook Key) → used for `GROK_KEY`
 
-Caso os campos não apareçam diretamente na interface, utilize os atalhos abaixo no navegador/aplicativo (ou solicite ao bot):
-- [Abrir Webhook URL](grokbot://app/v1/sidebar?target=webhook-url&automation=telegram-webhook-responder-mensagens) (`GROK_URL`)
-- [Abrir Webhook Key](grokbot://app/v1/sidebar?target=webhook-key&automation=telegram-webhook-responder-mensagens) (`GROK_KEY`)
+If these fields are not directly visible in the UI, you can open them via deep links (or ask the bot for them):
+- [Open Webhook URL](grokbot://app/v1/sidebar?target=webhook-url&automation=telegram-webhook-responder-mensagens) (`GROK_URL`)
+- [Open Webhook Key](grokbot://app/v1/sidebar?target=webhook-key&automation=telegram-webhook-responder-mensagens) (`GROK_KEY`)
 
-### 2. Gerar a senha secreta do Telegram (`TG_SECRET`)
+### 2. Generate Your Telegram Secret Token (`TG_SECRET`)
 
-Crie uma senha aleatória com **32 caracteres ou mais**, contendo apenas letras, números, `_` e `-`:
+Generate a random secret token of **32 or more characters** containing only letters, digits, `_`, and `-`:
 
 ```bash
 openssl rand -base64 48 | tr '+/' '_-' | tr -d '=' | cut -c1-40
 ```
 
-### 3. Configurar o `config.php`
+### 3. Configure `config.php`
 
-1. Faça uma cópia de `config.exemplo.php` com o nome `config.php`:
+1. Copy `config.example.php` to `config.php`:
    ```bash
-   cp config.exemplo.php config.php
+   cp config.example.php config.php
    ```
-2. Preencha os valores em `config.php`:
+2. Fill in your credentials and allowlists in `config.php`:
    ```php
-   define('TG_SECRET', 'SUA_SENHA_ALEATORIA_AQUI');
-   define('GROK_URL', 'https://seu-endpoint-de-webhook');
-   define('GROK_KEY', 'SUA_CHAVE_DO_WEBHOOK');
+   define('TG_SECRET', 'YOUR_RANDOM_SECRET_TOKEN');
+   define('GROK_URL', 'https://your-webhook-endpoint');
+   define('GROK_KEY', 'YOUR_WEBHOOK_KEY');
 
-   // IDs numéricos dos chats autorizados (positivos para chat privado, negativos para grupos)
+   // Allowed numeric chat IDs (positive for private chats, negative for groups/supergroups)
    $ALLOWED_CHATS = [123456789, -1009876543210];
 
-   // IDs numéricos dos usuários autorizados
+   // Allowed numeric user IDs
    $ALLOWED_USERS = [123456789];
    ```
-3. Envie `telegram.php`, `config.php` e `.htaccess` para o diretório desejado no seu servidor HTTPS (ex.: `https://seu-dominio.com/bot/`).
+3. Upload `telegram.php`, `config.php`, and `.htaccess` to your HTTPS server (e.g., `https://your-domain.com/bot/`).
 
-### 4. Registrar o Webhook no Telegram
+### 4. Register the Webhook with Telegram
 
-Abra o endereço abaixo no navegador (ou execute via `curl`), substituindo:
-- `TOKEN_DO_BOT` pelo token fornecido pelo `@BotFather`
-- `https://seu-dominio.com/bot/telegram.php` pela URL pública onde o script foi hospedado
-- `SUA_SENHA_TG_SECRET` pelo valor exato definido em `TG_SECRET` no `config.php`
+Open the following URL in your browser (or call it via `curl`), replacing:
+- `BOT_TOKEN` with your bot token from `@BotFather`
+- `https://your-domain.com/bot/telegram.php` with the public HTTPS URL where you uploaded `telegram.php`
+- `YOUR_TG_SECRET` with the exact `TG_SECRET` defined in `config.php`
 
 ```text
-https://api.telegram.org/botTOKEN_DO_BOT/setWebhook?url=https://seu-dominio.com/bot/telegram.php&secret_token=SUA_SENHA_TG_SECRET
+https://api.telegram.org/botBOT_TOKEN/setWebhook?url=https://your-domain.com/bot/telegram.php&secret_token=YOUR_TG_SECRET
 ```
 
-A resposta esperada do Telegram é:
+Telegram should respond with:
 ```json
 {"ok":true,"result":true,"description":"Webhook was set"}
 ```
 
+> **Note:** Once a Telegram webhook is active, periodic polling routines (`getUpdates`, such as 10-minute scheduled checks) will no longer receive updates and should be disabled.
+
 ---
 
-## Diagnóstico e Segurança
+## Diagnostics & Security
 
-- **Log de entregas (`bridge.log`):** Se alguma mensagem não acionar o bot, verifique o arquivo `bridge.log` gerado no mesmo diretório do servidor. Cada linha exibe o horário, o `update_id`, o `chat_id` e o código HTTP retornado pelo Grok Bot (`grok_http=200` ou `202` indica sucesso):
+- **Delivery Log (`bridge.log`):** If a message does not wake the bot, check `bridge.log` in the same server directory. Each entry records the timestamp, `update_id`, `chat_id`, and the HTTP status returned by Grok Bot (`grok_http=200` or `202` indicates success):
   ```text
   2026-10-31T22:55:00-03:00 update=123456789 chat=123456789 grok_http=200
   ```
-- **Privacidade:** Nenhum texto de mensagem ou token é gravado no arquivo de log.
-- **Usuários de Nginx:** O arquivo `.htaccess` funciona apenas no Apache. Se utilizar Nginx, adicione ao bloco `server` a regra abaixo para bloquear o acesso direto ao `config.php` e aos logs:
+- **Privacy:** Neither message text nor secret tokens are ever written to `bridge.log`.
+- **Nginx Users:** `.htaccess` only applies to Apache. If you run Nginx, add the following rule inside your `server` block to deny direct HTTP access to `config.php` and logs:
   ```nginx
-  location ~ /(config(\.exemplo)?\.php|.*\.log|README\.md|\.git) {
+  location ~ /(config(\.example|\.exemplo)?\.php|.*\.log|README\.md|\.git) {
       deny all;
       return 404;
   }

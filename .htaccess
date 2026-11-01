@@ -1,8 +1,8 @@
-# Desabilita listagem de diretórios
+# Disable directory listing
 Options -Indexes
 
-# Bloqueia acesso direto a arquivos de configuração, logs, documentação e metadados Git
-<FilesMatch "^(config(\.exemplo)?\.php|.*\.log|README\.md|\.git.*)$">
+# Deny direct HTTP access to configuration files, logs, documentation, and Git metadata
+<FilesMatch "^(config(\.example|\.exemplo)?\.php|.*\.log|README\.md|\.git.*)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>

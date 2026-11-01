@@ -3,14 +3,14 @@
 declare(strict_types=1);
 
 /**
- * Ponte (Webhook Bridge) entre a API do Telegram e uma rotina Webhook do Grok Bot.
+ * Telegram -> Grok Bot Webhook Bridge.
  *
- * Fluxo:
- * 1. Valida o método HTTP (POST) e o token secreto enviado pelo Telegram.
- * 2. Filtra apenas mensagens de texto/legenda de usuários e chats autorizados (ignora bots).
- * 3. Encerra a conexão HTTP com o Telegram imediatamente (HTTP 200) para evitar reenvios.
- * 4. Encaminha o payload completo via POST autenticado para o Webhook do Grok Bot.
- * 5. Registra apenas metadados de diagnóstico (sem conteúdo das mensagens) em `bridge.log`.
+ * Workflow:
+ * 1. Validates the HTTP method (POST) and the secret token sent by Telegram.
+ * 2. Filters for text/caption messages from allowlisted users and chats (ignores bots).
+ * 3. Closes the HTTP connection with Telegram immediately (HTTP 200) to prevent retries.
+ * 4. Forwards the full update payload via authenticated POST to the Grok Bot webhook.
+ * 5. Logs minimal diagnostic metadata (excluding message text) to `bridge.log`.
  */
 
 $configFile = __DIR__ . '/config.php';
@@ -21,7 +21,7 @@ if (!is_file($configFile)) {
 
 require $configFile;
 
-// Garante que as constantes essenciais foram preenchidas antes de aceitar requisições.
+// Ensure required configuration constants are populated before accepting requests.
 if (
     !defined('TG_SECRET') || TG_SECRET === ''
     || !defined('GROK_URL') || GROK_URL === ''
@@ -31,7 +31,7 @@ if (
     exit('misconfigured');
 }
 
-// Só aceita POST com a senha secreta que o Telegram envia no cabeçalho.
+// Only accept POST requests with the matching secret token in the Telegram header.
 $method = $_SERVER['REQUEST_METHOD'] ?? '';
 $secret = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '';
 if ($method !== 'POST' || !hash_equals((string) TG_SECRET, $secret)) {
@@ -42,7 +42,7 @@ if ($method !== 'POST' || !hash_equals((string) TG_SECRET, $secret)) {
 $raw = file_get_contents('php://input');
 $update = is_string($raw) ? json_decode($raw, true) : null;
 
-// Responde 200 ao Telegram de qualquer jeito para evitar fila de reenvios em updates ignorados.
+// Always return 200 OK to Telegram so ignored updates are not queued for retry.
 http_response_code(200);
 header('Content-Type: text/plain; charset=utf-8');
 
@@ -73,10 +73,10 @@ if (
     exit('ok');
 }
 
-// Mantém a execução viva mesmo após fechar a conexão com o Telegram.
+// Keep script execution alive after closing the connection with Telegram.
 ignore_user_abort(true);
 
-// Libera a resposta para o Telegram antes de chamar o Grok Bot.
+// Flush the response to Telegram before forwarding the request to Grok Bot.
 if (function_exists('fastcgi_finish_request')) {
     echo 'ok';
     fastcgi_finish_request();
@@ -121,7 +121,7 @@ if (PHP_VERSION_ID < 80000) {
     unset($ch);
 }
 
-// Registra apenas metadados curtos (sem texto das mensagens) para diagnóstico.
+// Log minimal diagnostic metadata (never log message content or credentials).
 $updateId = $update['update_id'] ?? '?';
 $errSuffix = $err !== '' ? " curl_error=\"" . str_replace(["\r", "\n", '"'], ' ', $err) . "\"" : '';
 $line = sprintf("%s update=%s chat=%s grok_http=%d%s\n", date('c'), $updateId, (string) $chatId, $code, $errSuffix);
