@@ -1,0 +1,11 @@
+# Configuração local com credenciais e IDs privados
+config.php
+
+# Logs gerados em execução
+*.log
+
+# Arquivos de sistema e editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
