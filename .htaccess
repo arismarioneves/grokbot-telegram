@@ -1,6 +1,17 @@
 # Disable directory listing
 Options -Indexes
 
+# Pass Authorization through to PHP. Some CGI/FastCGI setups (including Hostinger)
+# drop this header unless it is copied into an environment variable.
+<IfModule mod_setenvif.c>
+    SetEnvIf Authorization "^(.*)$" HTTP_AUTHORIZATION=$1
+</IfModule>
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+
 # Deny direct HTTP access to configuration files, logs, documentation, and Git metadata
 <FilesMatch "^(config(\.example|\.exemplo)?\.php|.*\.log|README\.md|\.git.*)$">
     <IfModule mod_authz_core.c>
